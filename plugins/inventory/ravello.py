@@ -7,20 +7,21 @@ Ravello external inventory script
 Generates inventory that Ansible can understand by making API request to
 Ravellosystems using the ravello_sdk (https://github.com/ravello/python-sdk) library.
 
-NOTE: This script assumes Ansible is being executed where the environment
-variables have already been set:
+NOTE: This script assumes Ansible is being executed where the environment variables have already been set:
     export RAVELLO_USERNAME='AK123'
     export RAVELLO_PASSWORD='abc123'
 
-This script also assumes there is an ravello.ini file alongside it. To specify a
-different path to ravello.ini, define the RAVELLO_INI_PATH environment variable:
+if you're want to change SSH_SERVICE_NAME or SSH_USER_NAME you need to define:
+    export RAVELLO_SSH_SERVICE_NAME=ssh
+    export RAVELLO_SSH_USER_NAME=ubuntu
 
-    export RAVELLO_INI_PATH=/path/to/my_rav.ini
-
-If you're using babu you need to set the above variables and
-you need to define:
-
+If you're using babu you need to set the above variables and you need to define:
     export RAVELLO_URL=https://hostname_of_your_babu/api/v1
+
+If you're want to limit result to 1 app you need to define:
+    export RAVELLO_APP_NAME=app_name
+    or
+    RAVELLO_APP_NAME=app_name ansible-playbook -i ravello.py site.yml
 
 This script returns the following variables in hostvars (per host):
 
@@ -108,9 +109,13 @@ class RavelloInventory(object):
         self.read_settings()
         self.parse_cli_args()
 
-        # single app
-        if self.args.app:
-            app = self.client.get_application_by_name(self.args.app)
+        # single app or limit
+        if self.args.app or self.app_name_limit is not None:
+            if self.app_name_limit is not None:
+                app = self.client.get_application_by_name(self.app_name_limit)
+            else:
+                app = self.client.get_application_by_name(self.args.app)
+                
             self.add_app_to_inventory(app)
             
         elif self.args.list:
@@ -123,19 +128,13 @@ class RavelloInventory(object):
         print self.json_format_dict(self.inventory, True)
    
     def read_settings(self):
-        
-        config = ConfigParser.SafeConfigParser()
-        rav_default_ini_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'ravello.ini')
-        rav_ini_path = os.environ.get('RAVELLO_INI_PATH', rav_default_ini_path)
-        config.read(rav_ini_path)
 
-        self.ssh_service_name = config.get('rav', 'ssh_service_name','ssh')
-        self.destination_variable = config.get('rav', 'destination_variable','fqdn')
-        self.ssh_user_name = config.get('rav', 'ssh_user_name','ravello')
+        self.ssh_service_name = os.environ.get('RAVELLO_SSH_SERVICE_NAME', 'ssh')
+        self.ssh_user_name = os.environ.get('RAVELLO_SSH_USER_NAME','ubuntu')
         username = os.environ.get('RAVELLO_USERNAME')
         password = os.environ.get('RAVELLO_PASSWORD')
         url = os.environ.get('RAVELLO_URL')
-        
+        self.app_name_limit = os.environ.get('RAVELLO_APP_NAME')
         self.client = RavelloClient(username, password, url)
        
     def parse_cli_args(self):
@@ -227,11 +226,8 @@ class RavelloInventory(object):
             if ext:
                 for network_connection in vm.get('networkConnections', []):
                     if network_connection['ipConfig']['id'] == supplied_service['ipConfigLuid']:
-                        if self.destination_variable in network_connection['ipConfig']:
-                            dest = network_connection['ipConfig'][self.destination_variable]
-                        else:
-                            self.error("%s field is not supported" % self.destination_variable )
-                        instance_vars['rav_public_ip'] = network_connection['ipConfig']['publicIp']
+                        dest = network_connection['ipConfig'].get('fqdn')
+                        instance_vars['rav_public_ip'] = network_connection['ipConfig'].get('publicIp')
                         
                         if 'autoIpConfig' in network_connection['ipConfig']:
                             if 'allocatedIp' in network_connection['ipConfig']['autoIpConfig']:
