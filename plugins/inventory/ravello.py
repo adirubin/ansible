@@ -170,7 +170,7 @@ class RavelloInventory(object):
                 self.push(self.inventory, self.to_safe('rav_cloud_id_'+ app['deployment']['cloudId']), dest)
                 self.push(self.inventory, self.to_safe('rav_vm_name_'+ vm['name']), dest)
                 vm_name = self.to_safe(vm['name'])
-                m = re.search('^(.*)-\d*?$',vm_name)
+                m = re.search('^(.*)_\d*?$',vm_name)
                 if m == None:
                     group_name = vm_name
                 else:
@@ -188,7 +188,8 @@ class RavelloInventory(object):
                 print 'error add to inventory. for app: %s ,vm: %s, EX: %s' % (app['name'], vm['name'], e)
            
     def is_external_ssh_service(self,supplied_service):
-        return (supplied_service['name'].lower() == self.ssh_service_name.lower() or supplied_service['portRange'].split(",")[0].split("-")[0] == "22") and supplied_service['external'] == True
+        #or supplied_service['portRange'].split(",")[0].split("-")[0] == "22")
+        return supplied_service['name'].lower() == self.ssh_service_name.lower() and supplied_service['external'] == True
     
     def get_host_info_dict(self, app, vm):
         instance_vars = {}
@@ -213,6 +214,8 @@ class RavelloInventory(object):
         
         instance_vars['rav_name'] = vm['name']
         instance_vars['rav_id'] = vm['id']
+        if 'hostnames' in vm:
+            instance_vars['rav_hostname'] = vm['hostnames'][0]
         
         instance_vars['rav_description'] = None
         if 'description' in vm:
@@ -220,15 +223,13 @@ class RavelloInventory(object):
         
         instance_vars['rav_owner_name'] = app['owner']
         
-        # ssh port determination        
+        # ssh port determination
         for supplied_service in vm.get('suppliedServices', []):
-            ext = self.is_external_ssh_service(supplied_service)
-            if ext:
+            if self.is_external_ssh_service(supplied_service):
                 for network_connection in vm.get('networkConnections', []):
                     if network_connection['ipConfig']['id'] == supplied_service['ipConfigLuid']:
                         dest = network_connection['ipConfig'].get('fqdn')
                         instance_vars['rav_public_ip'] = network_connection['ipConfig'].get('publicIp')
-                        
                         if 'autoIpConfig' in network_connection['ipConfig']:
                             if 'allocatedIp' in network_connection['ipConfig']['autoIpConfig']:
                                 private_ip = network_connection['ipConfig']['autoIpConfig']['allocatedIp']
@@ -241,7 +242,8 @@ class RavelloInventory(object):
                         instance_vars['rav_fqdn'] = network_connection['ipConfig']['fqdn']
                 instance_vars['rav_ssh_port'] = int(supplied_service['externalPort'].split(",")[0].split("-")[0])
                 instance_vars['ansible_ssh_port'] = int(supplied_service['externalPort'].split(",")[0].split("-")[0])
-    
+                break
+
         if 'rav_ssh_port' not in instance_vars or dest is None:
             return None, {}
 
@@ -260,7 +262,7 @@ class RavelloInventory(object):
         ''' Converts 'bad' characters in a string to underscores so they can be
         used as Ansible groups '''
 
-        return re.sub("[^A-Za-z0-9\-]", "_", word)
+        return re.sub("[^A-Za-z0-9\_]", "_", word)
 
 
     def json_format_dict(self, data, pretty=False):
