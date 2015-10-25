@@ -131,8 +131,8 @@ class RavelloInventory(object):
 
         self.ssh_service_name = os.environ.get('RAVELLO_SSH_SERVICE_NAME', 'ssh')
         self.ssh_user_name = os.environ.get('RAVELLO_SSH_USER_NAME','ubuntu')
-        username = os.environ.get('RAVELLO_USERNAME')
-        password = os.environ.get('RAVELLO_PASSWORD')
+        username = os.environ['RAVELLO_USERNAME']
+        password = os.environ['RAVELLO_PASSWORD']
         url = os.environ.get('RAVELLO_URL')
         self.app_name_limit = os.environ.get('RAVELLO_APP_NAME')
         self.client = RavelloClient(username, password, url)
