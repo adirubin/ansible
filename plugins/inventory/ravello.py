@@ -131,8 +131,8 @@ class RavelloInventory(object):
 
         self.ssh_service_name = os.environ.get('RAVELLO_SSH_SERVICE_NAME', 'ssh')
         self.ssh_user_name = os.environ.get('RAVELLO_SSH_USER_NAME','ubuntu')
-        username = os.environ.get('RAVELLO_USERNAME')
-        password = os.environ.get('RAVELLO_PASSWORD')
+        username = os.environ['RAVELLO_USERNAME']
+        password = os.environ['RAVELLO_PASSWORD']
         url = os.environ.get('RAVELLO_URL')
         self.app_name_limit = os.environ.get('RAVELLO_APP_NAME')
         self.client = RavelloClient(username, password, url)
@@ -169,6 +169,10 @@ class RavelloInventory(object):
                 self.push(self.inventory, self.to_safe('rav_region_id_'+ app['deployment']['regionId']), dest)
                 self.push(self.inventory, self.to_safe('rav_cloud_id_'+ app['deployment']['cloudId']), dest)
                 self.push(self.inventory, self.to_safe('rav_vm_name_'+ vm['name']), dest)
+                
+                if 'os' in vm:
+                    self.push(self.inventory, self.to_safe('rav_vm_os_'+ vm['os']), dest)
+                
                 vm_name = self.to_safe(vm['name'])
                 m = re.search('^(.*)_\d*?$',vm_name)
                 if m == None:
@@ -211,6 +215,12 @@ class RavelloInventory(object):
         
         instance_vars['rav_region_id'] = app['deployment']['regionId']
         instance_vars['rav_cloud_id'] = app['deployment']['cloudId']
+        
+        instance_vars['rav_is_windows'] = False
+        if 'os' in vm:
+            if "windows" in vm['os']:
+                instance_vars['ansible_connection'] = 'winrm' 
+                instance_vars['rav_is_windows'] = True
         
         instance_vars['rav_name'] = vm['name']
         instance_vars['rav_id'] = vm['id']
