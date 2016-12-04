@@ -37,21 +37,6 @@ try:
 except:
     HAS_LOOSE_VERSION = False
 
-AWS_REGIONS = [
-    'ap-northeast-1',
-    'ap-southeast-1',
-    'ap-southeast-2',
-    'cn-north-1',
-    'eu-central-1',
-    'eu-west-1',
-    'eu-central-1',
-    'sa-east-1',
-    'us-east-1',
-    'us-west-1',
-    'us-west-2',
-    'us-gov-west-1',
-]
-
 
 def aws_common_argument_spec():
     return dict(
@@ -68,7 +53,7 @@ def ec2_argument_spec():
     spec = aws_common_argument_spec()
     spec.update(
         dict(
-            region=dict(aliases=['aws_region', 'ec2_region'], choices=AWS_REGIONS),
+            region=dict(aliases=['aws_region', 'ec2_region']),
         )
     )
     return spec
