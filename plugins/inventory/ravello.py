@@ -47,7 +47,6 @@ Instances are grouped by the following categories:
     rav_app_id
     rav_app_name
     rav_region_id
-    rav_cloud_id
     rav_vm_group
     rav_vm_name
     rav_publish_optimization
@@ -167,7 +166,6 @@ class RavelloInventory(object):
                 self.push(self.inventory, self.to_safe('rav_app_id_'+ str(app['id'])), dest)
                 self.push(self.inventory, self.to_safe('rav_app_name_'+ app['name']), dest)
                 self.push(self.inventory, self.to_safe('rav_region_id_'+ app['deployment']['regionId']), dest)
-                self.push(self.inventory, self.to_safe('rav_cloud_id_'+ app['deployment']['cloudId']), dest)
                 self.push(self.inventory, self.to_safe('rav_vm_name_'+ vm['name']), dest)
                 
                 if 'os' in vm:
@@ -214,8 +212,7 @@ class RavelloInventory(object):
         instance_vars['rav_ssh_user_name'] = self.ssh_user_name
         
         instance_vars['rav_region_id'] = app['deployment']['regionId']
-        instance_vars['rav_cloud_id'] = app['deployment']['cloudId']
-        
+
         instance_vars['rav_is_windows'] = False
         if 'os' in vm:
             if "windows" in vm['os']:
