@@ -37,6 +37,7 @@ This script returns the following variables in hostvars (per host):
     rav_app_id
     rav_app_name
     rav_name
+    rav_group
     rav_id
     rav_app_owner_name
     rav_description
@@ -92,17 +93,18 @@ except ImportError:
 try:
     from ravello_sdk import *
 except ImportError:
-   print "ravello_sdk (https://github.com/ravello/python-sdk) required for this module"
+    print "ravello_sdk (https://github.com/ravello/python-sdk) required for this module"
 
 
 class RavelloInventory(object):
-    def _empty_inventory(self):
-        return {"_meta" : {"hostvars" : {}}}
 
     def __init__(self):
-        ''' Main execution path '''
-       
-        self.inventory = self._empty_inventory()
+        self.ssh_service_name = None
+        self.ssh_user_name = None
+        self.app_name_limit = None
+        self.client = None
+        self.inventory = {"_meta": {"hostvars": {}}}
+        self.args = None
 
         # Read settings and parse CLI arguments
         self.read_settings()
@@ -120,16 +122,16 @@ class RavelloInventory(object):
         elif self.args.list:
             apps = self.get_apps()
             for app in apps:
-               # reload full app
-               app = self.client.get_application(app)
-               self.add_app_to_inventory(app)
+                # reload full app
+                app = self.client.get_application(app)
+                self.add_app_to_inventory(app)
             
         print self.json_format_dict(self.inventory, True)
    
     def read_settings(self):
 
         self.ssh_service_name = os.environ.get('RAVELLO_SSH_SERVICE_NAME', 'ssh')
-        self.ssh_user_name = os.environ.get('RAVELLO_SSH_USER_NAME','ubuntu')
+        self.ssh_user_name = os.environ.get('RAVELLO_SSH_USER_NAME', 'ubuntu')
         username = os.environ['RAVELLO_USERNAME']
         password = os.environ['RAVELLO_PASSWORD']
         url = os.environ.get('RAVELLO_URL')
@@ -157,44 +159,37 @@ class RavelloInventory(object):
                 continue
             
             try:
-                (dest,data) = self.get_host_info_dict(app,vm)
+                (dest, data) = self.get_host_info_dict(app, vm)
                 if not dest:
                     continue
                 
                 self.inventory["_meta"]["hostvars"][dest] = data
-               # group by
-                self.push(self.inventory, self.to_safe('rav_app_id_'+ str(app['id'])), dest)
-                self.push(self.inventory, self.to_safe('rav_app_name_'+ app['name']), dest)
-                self.push(self.inventory, self.to_safe('rav_region_id_'+ app['deployment']['regionId']), dest)
-                self.push(self.inventory, self.to_safe('rav_vm_name_'+ vm['name']), dest)
+                # group by
+                self.push(self.inventory, self.to_safe('rav_app_id_' + str(app['id'])), dest)
+                self.push(self.inventory, self.to_safe('rav_app_name_' + app['name']), dest)
+                self.push(self.inventory, self.to_safe('rav_region_id_' + app['deployment']['regionId']), dest)
+                self.push(self.inventory, self.to_safe('rav_vm_name_' + vm['name']), dest)
                 
                 if 'os' in vm:
-                    self.push(self.inventory, self.to_safe('rav_vm_os_'+ vm['os']), dest)
+                    self.push(self.inventory, self.to_safe('rav_vm_os_' + vm['os']), dest)
                 
-                vm_name = self.to_safe(vm['name'])
-                m = re.search('^(.*)_\d*?$',vm_name)
-                if m == None:
-                    group_name = vm_name
-                else:
-                    group_name = m.groups()[0]
-                
-                self.push(self.inventory, self.to_safe('rav_vm_group_'+ group_name), dest)
+                group_name = self.get_group_name_by_vm_name(vm['name'])
+                self.push(self.inventory, self.to_safe('rav_vm_group_' + group_name), dest)
                 
                 if 'keypairName' in vm:
-                    self.push(self.inventory, self.to_safe('rav_ssh_keypair_name_'+ vm['keypairName']), dest)
+                    self.push(self.inventory, self.to_safe('rav_ssh_keypair_name_' + vm['keypairName']), dest)
                 
-                self.push(self.inventory, self.to_safe('rav_publish_optimization_'+ str(app['deployment']['publishOptimization'])), dest)
+                self.push(self.inventory, self.to_safe('rav_publish_optimization_' + str(app['deployment']['publishOptimization'])), dest)
                 # Global Tag: tag all ravello vms (in all apps)
                 self.push(self.inventory, 'rav_organization', dest)
             except Exception, e:
                 print 'error add to inventory. for app: %s ,vm: %s, EX: %s' % (app['name'], vm['name'], e)
            
-    def is_external_ssh_service(self,supplied_service):
-        #or supplied_service['portRange'].split(",")[0].split("-")[0] == "22")
-        return supplied_service['name'].lower() == self.ssh_service_name.lower() and supplied_service['external'] == True
+    def is_external_ssh_service(self, sup_service):
+        return sup_service['name'].lower() == self.ssh_service_name.lower() and sup_service['external'] is True
     
     def get_host_info_dict(self, app, vm):
-        instance_vars = {}
+        instance_vars = dict()
         #app stuff
         instance_vars['rav_app_active_vms'] = int(app['deployment']['totalActiveVms'])
         instance_vars['rav_app_id'] = app['id']
@@ -220,6 +215,7 @@ class RavelloInventory(object):
                 instance_vars['rav_is_windows'] = True
         
         instance_vars['rav_name'] = vm['name']
+        instance_vars['rav_group'] = self.get_group_name_by_vm_name(vm['name'])
         instance_vars['rav_id'] = vm['id']
         if 'hostnames' in vm:
             instance_vars['rav_hostname'] = vm['hostnames'][0]
@@ -256,7 +252,8 @@ class RavelloInventory(object):
 
         return dest, instance_vars
 
-    def push(self, my_dict, key, element):
+    @staticmethod
+    def push(my_dict, key, element):
         ''' Push an element onto an array that may not have been defined in the dict '''
         group_info = my_dict.setdefault(key, [])
         if isinstance(group_info, dict):
@@ -265,14 +262,8 @@ class RavelloInventory(object):
         else:
             group_info.append(element)
 
-    def to_safe(self, word):
-        ''' Converts 'bad' characters in a string to underscores so they can be
-        used as Ansible groups '''
-
-        return re.sub("[^A-Za-z0-9\_]", "_", word)
-
-
-    def json_format_dict(self, data, pretty=False):
+    @staticmethod
+    def json_format_dict(data, pretty=False):
         ''' Converts a dict to a JSON object and dumps it as a formatted
         string '''
 
@@ -281,9 +272,28 @@ class RavelloInventory(object):
         else:
             return json.dumps(data)
 
-    def error(self,msg):
+    @staticmethod
+    def error(msg):
         print(msg)
         sys.exit(1)
+
+    @staticmethod
+    def get_group_name_by_vm_name(vm_name):
+        vm = RavelloInventory.to_safe(vm_name)
+        m = re.search('^(.*)_\d*?$', vm)
+        if m is None:
+            return vm
+        else:
+            return m.groups()[0]
+
+    @staticmethod
+    def to_safe(word_to_check):
+        ''' Converts 'bad' characters in a string to underscores so they can be
+        used as Ansible groups '''
+
+        return re.sub("[^A-Za-z0-9\_]", "_", word_to_check)
+
+
 # Run the script
 RavelloInventory()
 
